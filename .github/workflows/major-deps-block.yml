@@ -1,71 +1,121 @@
+
 name: Block Major Dependency Jumps
 
 on:
   pull_request:
     paths:
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'package-lock.json'
-      - 'yarn.lock'
+      - package.json
+      - pnpm-lock.yaml
+      - package-lock.json
+      - yarn.lock
+
+permissions:
+  contents: read
 
 jobs:
   block-major-jump:
-    runs-on: ubuntu-latest
+    name: Block major dependency updates
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - name: Checkout base
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.base_ref }}
+          ref: ${{ github.event.pull_request.base.sha }}
           path: base
 
-      - name: Checkout head
+      - name: Checkout PR head
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           path: head
 
-      - name: Check for major version jumps
+      - name: Check for major version changes
+        shell: bash
         run: |
-          python3 << 'PY'
-          import json, re, os, sys
-          
-          def parse_ver(v):
-            v = str(v).strip().lstrip('^~>=<')
-            m = re.match(r'(\d+)\.(\d+)\.(\d+)', v)
-            if not m:
-              return None
-            return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-          
-          def load_deps(path):
-            try:
-              with open(path) as f:
-                d = json.load(f)
-              deps = {}
-              deps.update(d.get('dependencies', {}))
-              deps.update(d.get('devDependencies', {}))
-              return deps
-            except:
-              return {}
-          
-          base_deps = load_deps('base/package.json')
-          head_deps = load_deps('head/package.json')
-          
+          python3 <<'PY'
+          import json
+          import re
+          import sys
+
+          SECTIONS = (
+              "dependencies",
+              "devDependencies",
+              "optionalDependencies",
+              "peerDependencies",
+          )
+
+          def parse_version(value):
+              if not isinstance(value, str):
+                  return None
+
+              match = re.match(
+                  r"^[\^~>=<v]*\s*(\d+)\.(\d+)\.(\d+)",
+                  value.strip()
+              )
+
+              if not match:
+                  return None
+
+              return tuple(map(int, match.groups()))
+
+          def load_dependencies(path):
+              with open(path, encoding="utf-8") as file:
+                  package = json.load(file)
+
+              dependencies = {}
+
+              for section in SECTIONS:
+                  dependencies.update(package.get(section, {}))
+
+              return dependencies
+
+          base_deps = load_dependencies("base/package.json")
+          head_deps = load_dependencies("head/package.json")
+
           blocked = []
-          for pkg in set(base_deps) | set(head_deps):
-            bv = base_deps.get(pkg)
-            hv = head_deps.get(pkg)
-            if bv == hv or bv is None or hv is None:
-              continue
-            bp = parse_ver(bv)
-            hp = parse_ver(hv)
-            if not bp or not hp:
-              continue
-            if hp[0] - bp[0] >= 2:  # major jump of 2+
-              blocked.append(f'{pkg}: {bv} -> {hv}')
-          
+          skipped = []
+
+          for package in sorted(set(base_deps) & set(head_deps)):
+              old_version = base_deps[package]
+              new_version = head_deps[package]
+
+              if old_version == new_version:
+                  continue
+
+              old_parsed = parse_version(old_version)
+              new_parsed = parse_version(new_version)
+
+              if old_parsed is None or new_parsed is None:
+                  skipped.append(
+                      f"{package}: {old_version} -> {new_version}"
+                  )
+                  continue
+
+              if old_parsed[0] != new_parsed[0]:
+                  blocked.append(
+                      f"{package}: {old_version} -> {new_version}"
+                  )
+
+          if skipped:
+              print("Versions requiring manual review:")
+              for item in skipped:
+                  print(f"  - {item}")
+
           if blocked:
-            print('Blocked major dependency jumps detected:')
-            for b in blocked:
-              print(f'  - {b}')
-            sys.exit(1)
-          print('No blocked major dependency jumps')
+              print("\nMajor dependency updates are blocked:")
+              for item in blocked:
+                  print(f"  - {item}")
+
+              sys.exit(1)
+
+          print("No major dependency updates detected.")
           PY
