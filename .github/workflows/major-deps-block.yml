@@ -2,13 +2,7 @@
 name: Block Major Dependency Jumps
 
 on:
-  pull_request:550
-    paths:
-      - package.json
-      - pnpm-lock.yaml
-      - package-lock.json
-      - yarn.lock
-
+  pull_request:
 permissions:
   contents: read
 
