@@ -3,6 +3,9 @@ name: Block Major Dependency Jumps
 
 on:
   pull_request:
+    branches:
+      - main
+
 permissions:
   contents: read
 
@@ -32,7 +35,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: head
 
-      - name: Check for major version changes
+      - name: Check all direct dependencies
         shell: bash
         run: |
           python3 <<'PY'
@@ -40,76 +43,75 @@ jobs:
           import re
           import sys
 
-          SECTIONS = (
+          SECTIONS = [
               "dependencies",
               "devDependencies",
               "optionalDependencies",
               "peerDependencies",
-          )
+          ]
 
-          def parse_version(value):
-              if not isinstance(value, str):
+          def load_package(path):
+              with open(path, encoding="utf-8") as f:
+                  return json.load(f)
+
+          def get_dependencies(package):
+              result = {}
+
+              for section in SECTIONS:
+                  for name, version in package.get(section, {}).items():
+                      result[name] = version
+
+              return result
+
+          def parse_major(version):
+              if not isinstance(version, str):
                   return None
 
-              match = re.match(
-                  r"^[\^~>=<v]*\s*(\d+)\.(\d+)\.(\d+)",
-                  value.strip()
+              # Extract the first semantic version from a range.
+              match = re.search(
+                  r"(?<![a-zA-Z0-9])v?(\d+)\.(\d+)\.(\d+)",
+                  version
               )
 
               if not match:
                   return None
 
-              return tuple(map(int, match.groups()))
+              return int(match.group(1))
 
-          def load_dependencies(path):
-              with open(path, encoding="utf-8") as file:
-                  package = json.load(file)
-
-              dependencies = {}
-
-              for section in SECTIONS:
-                  dependencies.update(package.get(section, {}))
-
-              return dependencies
-
-          base_deps = load_dependencies("base/package.json")
-          head_deps = load_dependencies("head/package.json")
+          base = get_dependencies(load_package("base/package.json"))
+          head = get_dependencies(load_package("head/package.json"))
 
           blocked = []
           skipped = []
 
-          for package in sorted(set(base_deps) & set(head_deps)):
-              old_version = base_deps[package]
-              new_version = head_deps[package]
+          for name in sorted(set(base) & set(head)):
+              old = base[name]
+              new = head[name]
 
-              if old_version == new_version:
+              if old == new:
                   continue
 
-              old_parsed = parse_version(old_version)
-              new_parsed = parse_version(new_version)
+              old_major = parse_major(old)
+              new_major = parse_major(new)
 
-              if old_parsed is None or new_parsed is None:
-                  skipped.append(
-                      f"{package}: {old_version} -> {new_version}"
-                  )
+              if old_major is None or new_major is None:
+                  skipped.append(f"{name}: {old} -> {new}")
                   continue
 
-              if old_parsed[0] != new_parsed[0]:
-                  blocked.append(
-                      f"{package}: {old_version} -> {new_version}"
-                  )
+              if old_major != new_major:
+                  blocked.append(f"{name}: {old} -> {new}")
 
           if skipped:
-              print("Versions requiring manual review:")
+              print("\nCould not determine these versions:")
               for item in skipped:
                   print(f"  - {item}")
 
           if blocked:
-              print("\nMajor dependency updates are blocked:")
+              print("\nMajor dependency upgrades blocked:")
               for item in blocked:
                   print(f"  - {item}")
 
               sys.exit(1)
 
-          print("No major dependency updates detected.")
+          print("All declared direct dependencies passed.")
           PY
