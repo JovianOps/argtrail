@@ -1,0 +1,71 @@
+name: Block Major Dependency Jumps
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'package-lock.json'
+      - 'yarn.lock'
+
+jobs:
+  block-major-jump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          path: head
+
+      - name: Check for major version jumps
+        run: |
+          python3 << 'PY'
+          import json, re, os, sys
+          
+          def parse_ver(v):
+            v = str(v).strip().lstrip('^~>=<')
+            m = re.match(r'(\d+)\.(\d+)\.(\d+)', v)
+            if not m:
+              return None
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+          
+          def load_deps(path):
+            try:
+              with open(path) as f:
+                d = json.load(f)
+              deps = {}
+              deps.update(d.get('dependencies', {}))
+              deps.update(d.get('devDependencies', {}))
+              return deps
+            except:
+              return {}
+          
+          base_deps = load_deps('base/package.json')
+          head_deps = load_deps('head/package.json')
+          
+          blocked = []
+          for pkg in set(base_deps) | set(head_deps):
+            bv = base_deps.get(pkg)
+            hv = head_deps.get(pkg)
+            if bv == hv or bv is None or hv is None:
+              continue
+            bp = parse_ver(bv)
+            hp = parse_ver(hv)
+            if not bp or not hp:
+              continue
+            if hp[0] - bp[0] >= 2:  # major jump of 2+
+              blocked.append(f'{pkg}: {bv} -> {hv}')
+          
+          if blocked:
+            print('Blocked major dependency jumps detected:')
+            for b in blocked:
+              print(f'  - {b}')
+            sys.exit(1)
+          print('No blocked major dependency jumps')
+          PY
