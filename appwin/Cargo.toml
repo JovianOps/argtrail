@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wry = "0.47"
+wry = "0.57"
 tao = "0.31"
 tiny_http = "0.12"
 
