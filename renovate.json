@@ -3,10 +3,5 @@
   "extends": [
     "config:recommended"
   ],
-  "pnpm": {
-    "minimumReleaseAge": 0
-  },
-  "npm": {
-    "minimumReleaseAge": 0
-  }
+  "minimumReleaseAge": "0 days"
 }
