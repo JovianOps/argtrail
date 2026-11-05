@@ -1,0 +1,91 @@
+name: Dependency Major Version Guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  block-major-dependency-updates:
+    name: Block unapproved major dependency updates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compare dependency majors with base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          node <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const fs = require("node:fs");
+
+          const baseText = execFileSync(
+            "git",
+            ["show", `origin/${process.env.BASE_REF}:package.json`],
+            { encoding: "utf8" }
+          );
+          const base = JSON.parse(baseText);
+          const head = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const sections = [
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+          ];
+
+          function majorOf(spec) {
+            if (typeof spec !== "string") return null;
+            // Read the major from ordinary semver versions/ranges (e.g. 5.7.3,
+            // ^5.7.3, ~5.7.3, >=5.7.3). Non-semver specs are left to other checks.
+            const match = spec.match(/(?:^|[^0-9])v?(\d+)\.\d+\.\d+/);
+            return match ? Number(match[1]) : null;
+          }
+
+          const blocked = [];
+          for (const section of sections) {
+            const before = base[section] || {};
+            const after = head[section] || {};
+            for (const [name, newSpec] of Object.entries(after)) {
+              if (!(name in before)) continue;
+              const oldMajor = majorOf(before[name]);
+              const newMajor = majorOf(newSpec);
+              if (oldMajor !== null && newMajor !== null && oldMajor !== newMajor) {
+                blocked.push({
+                  name,
+                  section,
+                  from: before[name],
+                  to: newSpec,
+                });
+              }
+            }
+          }
+
+          if (blocked.length) {
+            console.error("Major dependency updates are blocked by this CI check:");
+            for (const item of blocked) {
+              console.error(
+                `- ${item.name} (${item.section}): ${item.from} -> ${item.to}`
+              );
+            }
+            console.error(
+              "\nUse a separate, explicitly reviewed PR to change the major version policy."
+            );
+            process.exit(1);
+          }
+
+          console.log("No dependency major-version changes detected.");
+          NODE
