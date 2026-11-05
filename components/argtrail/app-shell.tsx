@@ -39,7 +39,8 @@ function Shell() {
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5">
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-center gap-2">
+            <img src="/icon.ico" alt="" width="24" height="24" className="rounded-md" />
             <span className="font-mono text-base font-semibold">
               arg<span className="text-primary">trail</span>
             </span>

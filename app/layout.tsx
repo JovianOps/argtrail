@@ -12,12 +12,8 @@ export const metadata: Metadata = {
     "What you typed isn't always what your program received. Compare the argv your program actually receives across PowerShell 5.1, PowerShell 7, CMD, Bash and sh using local probes.",
   generator: 'v0.app',
   icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/icon.ico',
+    apple: '/icon-180.png',
   },
 }
 
